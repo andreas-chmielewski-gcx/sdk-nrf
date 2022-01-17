@@ -23,7 +23,7 @@
 LOG_MODULE_REGISTER(lwm2m_firmware, CONFIG_LWM2M_CLIENT_UTILS_LOG_LEVEL);
 
 #define BYTE_PROGRESS_STEP (1024 * 10)
-#define REBOOT_DELAY       K_SECONDS(1)
+#define REBOOT_DELAY K_SECONDS(1)
 
 static uint8_t firmware_buf[CONFIG_LWM2M_COAP_BLOCK_SIZE];
 
@@ -32,6 +32,8 @@ static uint8_t mcuboot_buf[CONFIG_APP_MCUBOOT_FLASH_BUF_SZ] __aligned(4);
 #endif
 
 static int image_type;
+static uint8_t percent_downloaded;
+static uint32_t bytes_downloaded;
 
 static struct k_work_delayable reboot_work;
 
@@ -88,11 +90,31 @@ cleanup:
 	return ret;
 }
 
-static void *firmware_get_buf(uint16_t obj_inst_id, uint16_t res_id,
-			      uint16_t res_inst_id, size_t *data_len)
+static void *firmware_get_buf(uint16_t obj_inst_id, uint16_t res_id, uint16_t res_inst_id,
+			      size_t *data_len)
 {
 	*data_len = sizeof(firmware_buf);
 	return firmware_buf;
+}
+
+static int firmware_update_state(uint16_t obj_inst_id, uint16_t res_id, uint16_t res_inst_id,
+				 uint8_t *data, uint16_t data_len, bool last_block,
+				 size_t total_size)
+{
+	int ret = 0;
+
+	if (*data == STATE_IDLE) {
+		ret = dfu_target_reset();
+		if (ret < 0) {
+			LOG_ERR("Failed to reset DFU target, err: %d", ret);
+			return ret;
+		}
+
+		percent_downloaded = 0;
+		bytes_downloaded = 0;
+	}
+
+	return 0;
 }
 
 static void dfu_target_cb(enum dfu_target_evt_id evt)
@@ -100,10 +122,9 @@ static void dfu_target_cb(enum dfu_target_evt_id evt)
 	ARG_UNUSED(evt);
 }
 
-static int firmware_block_received_cb(uint16_t obj_inst_id,
-				      uint16_t res_id, uint16_t res_inst_id,
-				      uint8_t *data, uint16_t data_len,
-				      bool last_block, size_t total_size)
+static int firmware_block_received_cb(uint16_t obj_inst_id, uint16_t res_id, uint16_t res_inst_id,
+				      uint8_t *data, uint16_t data_len, bool last_block,
+				      size_t total_size)
 {
 	static uint8_t percent_downloaded;
 	static uint32_t bytes_downloaded;
@@ -212,6 +233,7 @@ int lwm2m_init_firmware(void)
 	lwm2m_firmware_set_update_cb(firmware_update_cb);
 	/* setup data buffer for block-wise transfer */
 	lwm2m_engine_register_pre_write_callback("5/0/0", firmware_get_buf);
+	lwm2m_engine_register_post_write_callback("5/0/3", firmware_update_state);
 	lwm2m_firmware_set_write_cb(firmware_block_received_cb);
 
 	return 0;
