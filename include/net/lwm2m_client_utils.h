@@ -73,6 +73,9 @@ void lwm2m_verify_modem_fw_update(void);
 #endif
 
 #if defined(CONFIG_LWM2M_CLIENT_UTILS_CONN_MON_OBJ_SUPPORT)
+typedef int (*lwm2m_firmware_get_update_state_cb_t)(uint8_t update_state);
+void lwm2m_firmware_set_update_state_cb(lwm2m_firmware_get_update_state_cb_t cb);
+
 /**
  * @brief Initialize Connection Monitor object
  */
